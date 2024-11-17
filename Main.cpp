@@ -1,4 +1,5 @@
 #include "ByteFile.h"
+#include "Analyzer.h"
 #include <iostream>
 
 using namespace lama;
@@ -12,6 +13,7 @@ int main(int argc, const char **argv) {
   std::string byteFilePath = argv[1];
   try {
     ByteFile byteFile = ByteFile::load(byteFilePath);
+    analyze(std::move(byteFile));
   } catch (std::runtime_error &error) {
     std::cerr << error.what() << std::endl;
     return -1;
