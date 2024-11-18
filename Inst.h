@@ -91,6 +91,9 @@ protected:
 
 template <int N>
 class InstIdiom {
+public:
+  InstRef &at(size_t i) { return elements[i]; }
+
 private:
   std::array<InstRef, N> elements;
 };

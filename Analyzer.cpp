@@ -4,9 +4,14 @@
 #include "Inst.h"
 #include <algorithm>
 #include <iostream>
+#include <optional>
 
 #ifndef MAX_INSTS
 #define MAX_INSTS (1 << 20)
+#endif
+
+#ifndef MAX_IDIOMS
+#define MAX_IDIOMS (1 << 20)
 #endif
 
 using namespace lama;
@@ -134,7 +139,71 @@ size_t InstSeq::search(const uint8_t *ip) {
          data.begin();
 }
 
-static void reset() { InstSeq::reset(); }
+namespace {
+
+template <int N>
+class IdiomCollector {
+public:
+  void reset();
+
+  void collect();
+
+private:
+  void append(InstIdiom<N> idiom);
+
+  static std::optional<InstIdiom<N>> idiomAt(size_t instIndex);
+
+private:
+  std::array<InstIdiom<N>, MAX_IDIOMS> data;
+  size_t length = 0;
+};
+
+} // namespace
+
+template <int N>
+void IdiomCollector<N>::reset() {
+  length = 0;
+}
+
+template <int N>
+void IdiomCollector<N>::collect() {
+  for (size_t instIndex = 0; instIndex < InstSeq::getLength() - N + 1;
+       ++instIndex) {
+    auto idiom = idiomAt(instIndex);
+    if (!idiom)
+      continue;
+    append(*idiom);
+  }
+}
+
+template <int N>
+void IdiomCollector<N>::append(InstIdiom<N> idiom) {
+  if (length >= MAX_IDIOMS)
+    runtimeError("exhausted limit of {}-idioms ({})", N, MAX_IDIOMS);
+  data[length++] = idiom;
+}
+
+template <int N>
+std::optional<InstIdiom<N>> IdiomCollector<N>::idiomAt(size_t instIndex) {
+  InstIdiom<N> result;
+  result.at(0) = InstSeq::at(instIndex).ref;
+  for (size_t pos = 1; pos < N; ++pos) {
+    auto &element = InstSeq::at(instIndex + pos);
+    if (element.rift)
+      return std::nullopt;
+    result.at(pos) = element.ref;
+  }
+  return result;
+}
+
+static IdiomCollector<1> idioms1;
+static IdiomCollector<2> idioms2;
+
+static void reset() {
+  InstSeq::reset();
+  idioms1.reset();
+  idioms2.reset();
+}
 
 /// \return pointer to next instruction
 static const uint8_t *buildInstSeqStep(const uint8_t *ip) {
@@ -202,4 +271,6 @@ void lama::analyze(ByteFile &&byteFile) {
   }
   buildInstSeq();
   markRifts();
+  idioms1.collect();
+  idioms2.collect();
 }
