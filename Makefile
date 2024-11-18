@@ -11,11 +11,14 @@ Main.o: Main.cpp Analyzer.h ByteFile.h Error.h
 ByteFile.o: ByteFile.cpp ByteFile.h Error.h
 	$(CXX) -o $@ $(IDIOMAN_FLAGS) -c ByteFile.cpp
 
+Inst.o: Inst.cpp Inst.h Error.h
+	$(CXX) -o $@ $(IDIOMAN_FLAGS) -c Inst.cpp
+
 Analyzer.o: Analyzer.cpp Analyzer.h Inst.h ByteFile.h Error.h
 	$(CXX) -o $@ $(IDIOMAN_FLAGS) -c Analyzer.cpp
 
-idioman: Main.o ByteFile.o Analyzer.o
-	$(CXX) -o $@ $(IDIOMAN_FLAGS) Main.o ByteFile.o Analyzer.o
+idioman: Main.o ByteFile.o Inst.o Analyzer.o
+	$(CXX) -o $@ $(IDIOMAN_FLAGS) Main.o ByteFile.o Inst.o Analyzer.o
 
 clean:
 	$(RM) *.a *.o *~ idioman

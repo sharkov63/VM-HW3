@@ -85,7 +85,7 @@ const uint8_t *codeEnd;
 
 static void setFile(ByteFile &&byteFile) {
   file = std::move(byteFile);
-  codeBegin = reinterpret_cast<const uint8_t *>(file.getCode());
+  codeBegin = file.getCode();
   codeEnd = codeBegin + file.getCodeSizeBytes() - 1;
 }
 
@@ -105,7 +105,7 @@ public:
   static Element &at(size_t index) { return data[index]; }
   static size_t getLength() { return length; }
 
-  static Element &search(const uint8_t *ip);
+  static size_t search(const uint8_t *ip);
 
 private:
   static std::array<Element, MAX_INSTS> data;
@@ -125,12 +125,13 @@ void InstSeq::append(InstRef ref) {
   data[length++] = {ref};
 }
 
-InstSeq::Element &InstSeq::search(const uint8_t *ip) {
-  return *std::lower_bound(
-      data.begin(), data.begin() + length, ip,
-      [](const Element &element, const uint8_t *ip) -> bool {
-        return element.ref.getIp() < ip;
-      });
+size_t InstSeq::search(const uint8_t *ip) {
+  return std::lower_bound(
+             data.begin(), data.begin() + length, ip,
+             [](const Element &element, const uint8_t *ip) -> bool {
+               return element.ref.getIp() < ip;
+             }) -
+         data.begin();
 }
 
 static void reset() { InstSeq::reset(); }
@@ -160,10 +161,38 @@ static void buildInstSeq() {
   }
 }
 
-// static void markRifts() {
-//   for (size_t instIndex = 0; instIndex < InstSeq::getLength(); ++instIndex) {
-//   }
-// }
+static void markRiftAt(const uint8_t *ip) {
+  size_t instIndex = InstSeq::search(ip);
+  if (instIndex >= InstSeq::getLength() ||
+      InstSeq::at(instIndex).ref.getIp() != ip) {
+    runtimeError("invalid instruction address of {:#x}", ip - codeBegin);
+  }
+  InstSeq::at(instIndex).rift = true;
+}
+
+static void markRifts() {
+  InstSeq::at(0).rift = true;
+  for (size_t instIndex = 0; instIndex < InstSeq::getLength(); ++instIndex) {
+    auto &inst = InstSeq::at(instIndex);
+    uint8_t code = inst.ref.getCode();
+    switch (code) {
+    case I_BEGIN:
+    case I_BEGINcl: {
+      inst.rift = true;
+      break;
+    }
+    case I_JMP:
+    case I_CJMPz:
+    case I_CJMPnz:
+    case I_CALL: {
+      markRiftAt(file.getAddressFor(inst.ref.getParam(0)));
+      break;
+    }
+    default:
+      break;
+    }
+  }
+}
 
 void lama::analyze(ByteFile &&byteFile) {
   reset();
@@ -172,5 +201,5 @@ void lama::analyze(ByteFile &&byteFile) {
     runtimeError("empty bytefile");
   }
   buildInstSeq();
-  // markRifts();
+  markRifts();
 }

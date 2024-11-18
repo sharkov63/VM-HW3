@@ -5,7 +5,7 @@
 
 using namespace lama;
 
-ByteFile::ByteFile(std::unique_ptr<const char[]> data, size_t sizeBytes)
+ByteFile::ByteFile(std::unique_ptr<const uint8_t[]> data, size_t sizeBytes)
     : data(std::move(data)), sizeBytes(sizeBytes) {
   init();
 }
@@ -70,12 +70,12 @@ ByteFile ByteFile::load(std::string path) {
   }
   auto sizeBytes = stream.tellg();
   stream.seekg(0, std::ios::beg);
-  std::unique_ptr<char[]> data(new char[sizeBytes]);
-  stream.read(data.get(), sizeBytes);
+  std::unique_ptr<uint8_t[]> data(new uint8_t[sizeBytes]);
+  stream.read((char *)(data.get()), sizeBytes);
   return ByteFile(std::move(data), sizeBytes);
 }
 
-const char *ByteFile::getAddressFor(size_t offset) const {
+const uint8_t *ByteFile::getAddressFor(size_t offset) const {
   if (offset >= codeSizeBytes) {
     runtimeError("access instruction address {:#x} out of bounds [0, {:#x})",
                  offset, codeSizeBytes);
@@ -83,7 +83,7 @@ const char *ByteFile::getAddressFor(size_t offset) const {
   return code + offset;
 }
 
-const char *ByteFile::getStringAt(size_t offset) const {
+const uint8_t *ByteFile::getStringAt(size_t offset) const {
   if (offset >= stringTableSizeBytes) {
     runtimeError("access string at {:#x} out of bounds [0, {:#x}]", offset,
                  stringTableSizeBytes);

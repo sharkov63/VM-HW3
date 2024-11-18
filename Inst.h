@@ -81,6 +81,8 @@ public:
 
   const uint8_t *getIp() const { return data; }
   size_t getLength() const { return 1 + sizeof(int32_t) * paramNum; }
+  uint8_t getCode() const { return *data; }
+  int32_t getParam(size_t index) const;
 
 protected:
   const uint8_t *data;
