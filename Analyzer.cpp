@@ -142,11 +142,28 @@ size_t InstSeq::search(const uint8_t *ip) {
 namespace {
 
 template <int N>
+struct IdiomOccurence {
+  InstIdiom<N> idiom;
+  size_t count;
+
+  bool operator<(const IdiomOccurence &other) const {
+    return std::tie(count, idiom) < std::tie(other.count, other.idiom);
+  }
+  bool operator==(const IdiomOccurence &other) const {
+    return std::tie(count, idiom) == std::tie(other.count, other.idiom);
+  }
+};
+
+template <int N>
 class IdiomCollector {
 public:
   void reset();
 
   void collect();
+
+  void count();
+
+  void report(std::ostream &os);
 
 private:
   void append(InstIdiom<N> idiom);
@@ -156,6 +173,9 @@ private:
 private:
   std::array<InstIdiom<N>, MAX_IDIOMS> data;
   size_t length = 0;
+
+  std::array<IdiomOccurence<N>, MAX_IDIOMS> occurenceData;
+  size_t occurenceDataLength;
 };
 
 } // namespace
@@ -163,6 +183,7 @@ private:
 template <int N>
 void IdiomCollector<N>::reset() {
   length = 0;
+  occurenceDataLength = 0;
 }
 
 template <int N>
@@ -173,6 +194,31 @@ void IdiomCollector<N>::collect() {
     if (!idiom)
       continue;
     append(*idiom);
+  }
+}
+
+template <int N>
+void IdiomCollector<N>::count() {
+  std::sort(data.begin(), data.begin() + length);
+  for (size_t index = 0; index < length;) {
+    size_t nextIndex = index + 1;
+    while (nextIndex < length && data[nextIndex] == data[index])
+      ++nextIndex;
+    size_t count = nextIndex - index;
+    occurenceData[occurenceDataLength++] = {data[index], count};
+    index = nextIndex;
+  }
+  std::sort(occurenceData.begin(), occurenceData.begin() + occurenceDataLength);
+}
+
+template <int N>
+void IdiomCollector<N>::report(std::ostream &os) {
+  os << fmt::format("Found {} {}-idioms\n", occurenceDataLength, N);
+  for (int index = occurenceDataLength - 1; index >= 0; --index) {
+    auto &idiomOccurence = occurenceData[index];
+    auto &idiom = idiomOccurence.idiom;
+    idiom.dump(os);
+    os << fmt::format(" x{}\n", idiomOccurence.count);
   }
 }
 
@@ -273,4 +319,8 @@ void lama::analyze(ByteFile &&byteFile) {
   markRifts();
   idioms1.collect();
   idioms2.collect();
+  idioms1.count();
+  idioms2.count();
+  idioms1.report(std::cerr);
+  idioms2.report(std::cerr);
 }

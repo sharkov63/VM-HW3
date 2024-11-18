@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <cstdlib>
+#include <ostream>
 
 namespace lama {
 
@@ -84,6 +85,11 @@ public:
   uint8_t getCode() const { return *data; }
   int32_t getParam(size_t index) const;
 
+  bool operator<(InstRef other) const;
+  bool operator==(InstRef other) const;
+
+  void dump(std::ostream &out) const;
+
 protected:
   const uint8_t *data;
   size_t paramNum;
@@ -93,6 +99,20 @@ template <int N>
 class InstIdiom {
 public:
   InstRef &at(size_t i) { return elements[i]; }
+  const InstRef &at(size_t i) const { return elements[i]; }
+
+  bool operator<(InstIdiom<N> other) const { return elements < other.elements; }
+  bool operator==(InstIdiom<N> other) const {
+    return elements == other.elements;
+  }
+
+  void dump(std::ostream &out) const {
+    for (size_t pos = 0; pos < N; ++pos) {
+      at(pos).dump(out);
+      if (pos < N - 1)
+        out << "; ";
+    }
+  }
 
 private:
   std::array<InstRef, N> elements;
