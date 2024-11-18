@@ -3,6 +3,7 @@
 #include "Error.h"
 #include "Inst.h"
 #include <algorithm>
+#include <iostream>
 
 #ifndef MAX_INSTS
 #define MAX_INSTS (1 << 20)
@@ -12,6 +13,36 @@ using namespace lama;
 
 static size_t getParamNum(uint8_t code, const uint8_t *paramBegin) {
   switch (code) {
+  case I_BINOP_Add:
+  case I_BINOP_Sub:
+  case I_BINOP_Mul:
+  case I_BINOP_Div:
+  case I_BINOP_Mod:
+  case I_BINOP_Lt:
+  case I_BINOP_Leq:
+  case I_BINOP_Gt:
+  case I_BINOP_Geq:
+  case I_BINOP_Eq:
+  case I_BINOP_Neq:
+  case I_BINOP_And:
+  case I_BINOP_Or:
+  case I_STA:
+  case I_END:
+  case I_DROP:
+  case I_DUP:
+  case I_ELEM:
+  case I_PATT_StrCmp:
+  case I_PATT_String:
+  case I_PATT_Array:
+  case I_PATT_Sexp:
+  case I_PATT_Boxed:
+  case I_PATT_UnBoxed:
+  case I_PATT_Closure:
+  case I_CALL_Lread:
+  case I_CALL_Lwrite:
+  case I_CALL_Llength:
+  case I_CALL_Lstring:
+    return 0;
   case I_CONST:
   case I_STRING:
   case I_JMP:
@@ -42,9 +73,9 @@ static size_t getParamNum(uint8_t code, const uint8_t *paramBegin) {
   case I_FAIL:
     return 2;
   case I_CLOSURE:
-    runtimeError("not supported");
+    runtimeError("I_CLOSURE is not supported yet");
   default:
-    return 0;
+    runtimeError("unsupported instruction code {:#04x}", code);
   }
 }
 
@@ -55,7 +86,7 @@ const uint8_t *codeEnd;
 static void setFile(ByteFile &&byteFile) {
   file = std::move(byteFile);
   codeBegin = reinterpret_cast<const uint8_t *>(file.getCode());
-  codeEnd = codeBegin + file.getCodeSizeBytes();
+  codeEnd = codeBegin + file.getCodeSizeBytes() - 1;
 }
 
 namespace {
@@ -108,29 +139,38 @@ static void reset() { InstSeq::reset(); }
 static const uint8_t *buildInstSeqStep(const uint8_t *ip) {
   uint8_t code = *ip;
   size_t paramNum = getParamNum(code, ip + 1);
+  const uint8_t *nextIp = ip + 1 + sizeof(int32_t) * paramNum;
+  if (nextIp > codeEnd) {
+    runtimeError(
+        "unexpected end of bytefile: instruction {:#x} requires {} parameters");
+  }
   InstRef ref(ip, paramNum);
   InstSeq::append(ref);
-  return ip + 1 + sizeof(int32_t) * paramNum;
+  return nextIp;
 }
 
 static void buildInstSeq() {
   const uint8_t *ip = codeBegin;
-  while (ip < codeEnd)
-    ip = buildInstSeqStep(ip);
+  while (ip < codeEnd) {
+    try {
+      ip = buildInstSeqStep(ip);
+    } catch (std::runtime_error &e) {
+      runtimeError("runtime error at {:#x}: {}", ip - codeBegin, e.what());
+    }
+  }
 }
 
 // static void markRifts() {
 //   for (size_t instIndex = 0; instIndex < InstSeq::getLength(); ++instIndex) {
-
 //   }
 // }
 
 void lama::analyze(ByteFile &&byteFile) {
   reset();
-  if (byteFile.getCodeSizeBytes() == 0) {
-    // TODO
-  }
   setFile(std::move(byteFile));
+  if (file.getCodeSizeBytes() == 0) {
+    runtimeError("empty bytefile");
+  }
   buildInstSeq();
   // markRifts();
 }
