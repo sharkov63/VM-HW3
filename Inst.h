@@ -74,16 +74,26 @@ enum InstCode {
   I_CALL_Barray = 0x74,
 };
 
+// class InstRef2 {
+// public:
+//   InstRef2() : data(nullptr) {}
+//   explicit InstRef2(const uint8_t *data, size_t length)
+//       : data(data), length(length) {}
+
+// protected:
+//   const uint8_t *data;
+//   size_t length;
+// };
+
 class InstRef {
 public:
   InstRef() : data(nullptr) {}
-  explicit InstRef(const uint8_t *inst, size_t paramNum)
-      : data(inst), paramNum(paramNum) {}
+  explicit InstRef(const uint8_t *inst, size_t length)
+      : data(inst), length(length) {}
 
   const uint8_t *getIp() const { return data; }
-  size_t getLength() const { return 1 + sizeof(int32_t) * paramNum; }
+  size_t getLength() const { return length; }
   uint8_t getCode() const { return *data; }
-  int32_t getParam(size_t index) const;
 
   bool operator<(InstRef other) const;
   bool operator==(InstRef other) const;
@@ -92,7 +102,7 @@ public:
 
 protected:
   const uint8_t *data;
-  size_t paramNum;
+  size_t length;
 };
 
 template <int N>

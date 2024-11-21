@@ -2,6 +2,7 @@
 #include "ByteFile.h"
 #include "Error.h"
 #include "Inst.h"
+#include "Parser.h"
 #include <algorithm>
 #include <iostream>
 #include <optional>
@@ -87,11 +88,13 @@ static size_t getParamNum(uint8_t code, const uint8_t *paramBegin) {
 static ByteFile file;
 const uint8_t *codeBegin;
 const uint8_t *codeEnd;
+const char *strtab;
 
 static void setFile(ByteFile &&byteFile) {
   file = std::move(byteFile);
   codeBegin = file.getCode();
   codeEnd = codeBegin + file.getCodeSizeBytes() - 1;
+  strtab = file.getStringTable();
 }
 
 namespace {
@@ -265,11 +268,19 @@ static const uint8_t *buildInstSeqStep(const uint8_t *ip) {
   return nextIp;
 }
 
+static const uint8_t *buildInstSeqStep2(const uint8_t *ip) {
+  PARSE_INST;
+  return ip;
+}
+
 static void buildInstSeq() {
   const uint8_t *ip = codeBegin;
   while (ip < codeEnd) {
     try {
-      ip = buildInstSeqStep(ip);
+      const uint8_t *nextip = buildInstSeqStep2(ip);
+      InstRef ref(ip, nextip - ip);
+      InstSeq::append(ref);
+      ip = nextip;
     } catch (std::runtime_error &e) {
       runtimeError("runtime error at {:#x}: {}", ip - codeBegin, e.what());
     }
@@ -300,7 +311,9 @@ static void markRifts() {
     case I_CJMPz:
     case I_CJMPnz:
     case I_CALL: {
-      markRiftAt(file.getAddressFor(inst.ref.getParam(0)));
+      int32_t offset;
+      memcpy(&offset, inst.ref.getIp() + 1, sizeof(offset));
+      markRiftAt(file.getAddressFor(offset));
       break;
     }
     default:

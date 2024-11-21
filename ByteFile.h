@@ -16,6 +16,9 @@ public:
 
   const uint8_t *getAddressFor(size_t offset) const;
 
+  const char *getStringTable() const {
+    return reinterpret_cast<const char *>(stringTable);
+  }
   const uint8_t *getStringAt(size_t offset) const;
 
 private:
