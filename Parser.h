@@ -48,7 +48,7 @@ inline const char *lds[] = {"LD", "LDA", "ST"};
 #define PARSER_ON_BYTE(b) ;
 #define PARSER_ON_INT(n) ;
 #define PARSER_ON_STRING(s) ;
-#define PARSER_ON_LABEL(p) ;
+#define PARSER_ON_LABEL(l) ;
 #define PARSER_PRINTF_INST(...) ;
 
 /// Generic Lama instruction parser.
@@ -58,6 +58,7 @@ inline const char *lds[] = {"LD", "LDA", "ST"};
 /// \pre codeEnd is the end of code region, pointer to 0xff byte.
 /// \pre strtab is the pointer to the string table
 #define PARSE_INST                                                             \
+  using namespace ::lama::parser;                                              \
   uint8_t x = *ip;                                                             \
   uint8_t h = (x & 0xF0) >> 4;                                                 \
   uint8_t l = x & 0x0F;                                                        \
@@ -301,7 +302,6 @@ inline const char *lds[] = {"LD", "LDA", "ST"};
   default: {                                                                   \
     _PARSER_FAIL_UNSUPPORTED_INST;                                             \
   }                                                                            \
-  }                                                                            \
-  PARSER_PRINTF_INST("\n");
+  }
 
 } // namespace lama::parser
