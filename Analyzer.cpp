@@ -142,7 +142,17 @@ static void dumpIdiom(const uint8_t *ip) {
 struct IdiomOccurrence {
   const uint8_t *idiomp;
   int32_t count;
+
+  template <int N>
+  void dump() const;
 };
+
+template <int N>
+void IdiomOccurrence::dump() const {
+  std::cerr << fmt::format("{} occurrences of\n", count);
+  dumpIdiom<N>(idiomp);
+  std::cerr << '\n';
+}
 
 template <int N>
 static inline bool idiomCmp(const IdiomOccurrence &lhs,
@@ -176,6 +186,8 @@ public:
 
   void analyze();
 
+  const std::vector<IdiomOccurrence> &getIdioms() const { return idioms; }
+
 private:
   void collect();
   void collectAt(const uint8_t *ip);
@@ -192,7 +204,7 @@ template <int N>
 void IdiomAnalyzer<N>::analyze() {
   collect();
   count();
-  report();
+  // report();
 }
 
 template <int N>
@@ -233,6 +245,8 @@ void IdiomAnalyzer<N>::count() {
   }
   idioms.resize(nextSlot);
   std::sort(idioms.begin(), idioms.end(), countCmp);
+  std::reverse(idioms.begin(), idioms.end());
+  idioms.shrink_to_fit();
 }
 
 template <int N>
@@ -356,12 +370,21 @@ void lama::analyze(ByteFile &&byteFile) {
     Parser parser;
     parser.parse();
   }
-  {
-    IdiomAnalyzer<1> analyzer;
-    analyzer.analyze();
-  }
-  {
-    IdiomAnalyzer<2> analyzer;
-    analyzer.analyze();
+  IdiomAnalyzer<1> analyzer1;
+  analyzer1.analyze();
+  auto idioms1 = analyzer1.getIdioms();
+  IdiomAnalyzer<2> analyzer2;
+  analyzer2.analyze();
+  auto idioms2 = analyzer2.getIdioms();
+  std::cerr << fmt::format("Found {} idioms\n\n",
+                           idioms1.size() + idioms2.size());
+  int pos1 = 0;
+  int pos2 = 0;
+  while (pos1 < idioms1.size() || pos2 < idioms2.size()) {
+    if (pos2 >= idioms2.size() || idioms1[pos1].count >= idioms2[pos2].count) {
+      idioms1[pos1++].dump<1>();
+    } else {
+      idioms2[pos2++].dump<2>();
+    }
   }
 }
