@@ -249,28 +249,38 @@ namespace {
 
 class Parser {
 public:
-  static void parse();
+  void parse();
 
 private:
-  static void parseAt(const uint8_t *ip);
+  void parseAt(const uint8_t *ip);
 
   /// \return nextIp
-  static const uint8_t *invokeParser(const uint8_t *ip, const uint8_t **label);
+  const uint8_t *invokeParser(const uint8_t *ip, const uint8_t **label);
+
+  void enqueue(const uint8_t *ip);
+
+  std::vector<const uint8_t *> stack;
 };
 
 } // namespace
 
 void Parser::parse() {
+  stack.reserve(sizeof(int32_t) * file.getCodeSizeBytes());
   instructionNum = 0;
   aux = std::unique_ptr<uint8_t[]>(new uint8_t[file.getCodeSizeBytes()]);
   memset(aux.get(), 0, file.getCodeSizeBytes());
   for (int i = 0; i < file.getPublicSymbolNum(); ++i) {
     int32_t offset = file.getPublicSymbolOffset(i);
     const uint8_t *beginIp = file.getAddressFor(offset);
+    enqueue(beginIp);
+  }
+  while (!stack.empty()) {
+    const uint8_t *ip = stack.back();
+    stack.pop_back();
     try {
-      parseAt(beginIp);
+      parseAt(ip);
     } catch (std::runtime_error &e) {
-      runtimeError("failed to parse public symbol at {:#x}", offset);
+      runtimeError("parsing fail at {:#x}: {}", ip - codeBegin, e.what());
     }
   }
 }
@@ -280,10 +290,7 @@ void Parser::parseAt(const uint8_t *ip) {
     runtimeError("reached out of bytecode bounds");
   uint8_t code = *ip;
   uint8_t *auxp = auxpOf(ip);
-  if (*auxp & AUX_REACHED)
-    return;
   ++instructionNum;
-  *auxp |= AUX_REACHED;
   const uint8_t *label = nullptr; // optional
   const uint8_t *nextIp = invokeParser(ip, &label);
   int32_t length = nextIp - ip;
@@ -298,7 +305,7 @@ void Parser::parseAt(const uint8_t *ip) {
     runtimeError("unexpected end of the bytecode after {:#x}", ip - codeBegin);
   if (label) {
     *auxpOf(label) |= AUX_RIFT;
-    parseAt(label);
+    enqueue(label);
   }
   switch (code) {
   case I_BEGIN:
@@ -318,7 +325,7 @@ void Parser::parseAt(const uint8_t *ip) {
     break;
   }
   }
-  parseAt(nextIp);
+  enqueue(nextIp);
 }
 
 const uint8_t *Parser::invokeParser(const uint8_t *ip, const uint8_t **label) {
@@ -332,12 +339,23 @@ const uint8_t *Parser::invokeParser(const uint8_t *ip, const uint8_t **label) {
   return ip;
 }
 
+void Parser::enqueue(const uint8_t *ip) {
+  uint8_t *auxp = auxpOf(ip);
+  if (*auxp & AUX_REACHED)
+    return;
+  *auxp |= AUX_REACHED;
+  stack.push_back(ip);
+}
+
 void lama::analyze(ByteFile &&byteFile) {
   setFile(std::move(byteFile));
   if (file.getCodeSizeBytes() == 0) {
     runtimeError("empty bytefile");
   }
-  Parser::parse();
+  {
+    Parser parser;
+    parser.parse();
+  }
   {
     IdiomAnalyzer<1> analyzer;
     analyzer.analyze();
