@@ -21,6 +21,12 @@ public:
   }
   const uint8_t *getStringAt(size_t offset) const;
 
+  size_t getPublicSymbolNum() const { return publicSymbolsNum; }
+
+  int32_t getPublicSymbolOffset(size_t index) const {
+    return publicSymbolTable[2 * index + 1];
+  }
+
 private:
   void init();
 

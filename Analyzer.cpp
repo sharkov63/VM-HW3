@@ -3,14 +3,13 @@
 #include "Error.h"
 #include "Parser.h"
 #include <algorithm>
-#include <array>
 #include <cassert>
 #include <iostream>
-#include <optional>
 #include <vector>
 
-#define AUX_RIFT (1 << 0)
-#define AUX_LONG (1 << 1)
+#define AUX_REACHED (1 << 0)
+#define AUX_RIFT (1 << 1)
+#define AUX_LONG (1 << 2)
 
 using namespace lama;
 
@@ -86,11 +85,9 @@ enum InstCode {
 }
 
 static ByteFile file;
-const uint8_t *codeBegin;
-const uint8_t *codeEnd;
-const char *strtab;
-std::unique_ptr<uint8_t[]> aux;
-size_t instructionNum;
+static const uint8_t *codeBegin;
+static const uint8_t *codeEnd;
+static const char *strtab;
 
 static void setFile(ByteFile &&byteFile) {
   file = std::move(byteFile);
@@ -99,12 +96,15 @@ static void setFile(ByteFile &&byteFile) {
   strtab = file.getStringTable();
 }
 
-static inline uint8_t *getAuxP(const uint8_t *ip) {
+static std::unique_ptr<uint8_t[]> aux;
+static size_t instructionNum;
+
+static inline uint8_t *auxpOf(const uint8_t *ip) {
   return &aux[ip - codeBegin];
 }
 
 static inline int32_t getInstLength(const uint8_t *ip) {
-  const uint8_t *auxp = getAuxP(ip);
+  const uint8_t *auxp = auxpOf(ip);
   if (!(*auxp & AUX_LONG))
     return 1;
   int32_t length;
@@ -122,19 +122,11 @@ static void dumpInst(const uint8_t *ip) {
 #define PARSER_PRINTF_INST(...) ;
 }
 
-#define IDIOM_FAIL (-1)
-
-/// \return IDIOM_FAIL if not a valid idiom
 template <int N>
 static inline int32_t getIdiomLength(const uint8_t *ip) {
   const uint8_t *idiomp = ip;
-  for (int i = 0; i < N; ++i) {
-    if (ip >= codeEnd)
-      return IDIOM_FAIL;
-    if (i > 0 && (*getAuxP(ip) & AUX_RIFT))
-      return IDIOM_FAIL;
+  for (int i = 0; i < N; ++i)
     ip += getInstLength(ip);
-  }
   return ip - idiomp;
 }
 
@@ -184,8 +176,12 @@ public:
 
   void analyze();
 
+private:
   void collect();
+  void collectAt(const uint8_t *ip);
+
   void count();
+
   void report();
 
 private:
@@ -203,10 +199,24 @@ template <int N>
 void IdiomAnalyzer<N>::collect() {
   const uint8_t *ip = codeBegin;
   while (ip < codeEnd) {
-    if (getIdiomLength<N>(ip) > 0)
-      idioms.push_back({ip});
+    collectAt(ip);
     ip += getInstLength(ip);
   }
+}
+
+template <int N>
+void IdiomAnalyzer<N>::collectAt(const uint8_t *ip) {
+  if (!(*auxpOf(ip) & AUX_REACHED))
+    return;
+  const uint8_t *idiomp = ip;
+  for (int i = 0; i < N; ++i) {
+    if (ip >= codeEnd)
+      return;
+    if (i > 0 && (*auxpOf(ip) & AUX_RIFT))
+      return;
+    ip += getInstLength(ip);
+  }
+  idioms.push_back({idiomp});
 }
 
 template <int N>
@@ -235,51 +245,99 @@ void IdiomAnalyzer<N>::report() {
   }
 }
 
-static void reset() { aux.release(); }
+namespace {
 
-static const uint8_t *prepareAuxStep(const uint8_t *ip) {
+class Parser {
+public:
+  static void parse();
 
+private:
+  static void parseAt(const uint8_t *ip);
+
+  /// \return nextIp
+  static const uint8_t *invokeParser(const uint8_t *ip, const uint8_t **label);
+};
+
+} // namespace
+
+void Parser::parse() {
+  instructionNum = 0;
+  aux = std::unique_ptr<uint8_t[]>(new uint8_t[file.getCodeSizeBytes()]);
+  memset(aux.get(), 0, file.getCodeSizeBytes());
+  for (int i = 0; i < file.getPublicSymbolNum(); ++i) {
+    int32_t offset = file.getPublicSymbolOffset(i);
+    const uint8_t *beginIp = file.getAddressFor(offset);
+    try {
+      parseAt(beginIp);
+    } catch (std::runtime_error &e) {
+      runtimeError("failed to parse public symbol at {:#x}", offset);
+    }
+  }
+}
+
+void Parser::parseAt(const uint8_t *ip) {
+  if (ip < codeBegin || ip >= codeEnd)
+    runtimeError("reached out of bytecode bounds");
+  uint8_t code = *ip;
+  uint8_t *auxp = auxpOf(ip);
+  if (*auxp & AUX_REACHED)
+    return;
+  ++instructionNum;
+  *auxp |= AUX_REACHED;
+  const uint8_t *label = nullptr; // optional
+  const uint8_t *nextIp = invokeParser(ip, &label);
+  int32_t length = nextIp - ip;
+  if (length > 1) {
+    assert(length >= 1 + sizeof(int32_t));
+    *auxp |= AUX_LONG;
+    memcpy(auxp + 1, &length, sizeof(int32_t));
+  }
+  if (code == I_END)
+    return;
+  if (nextIp >= codeEnd)
+    runtimeError("unexpected end of the bytecode after {:#x}", ip - codeBegin);
+  if (label) {
+    *auxpOf(label) |= AUX_RIFT;
+    parseAt(label);
+  }
+  switch (code) {
+  case I_BEGIN:
+  case I_BEGINcl: {
+    *auxp |= AUX_RIFT;
+    break;
+  }
+  case I_JMP: {
+    // We don't move to next instruction on unconditional jump
+    return;
+  }
+  case I_CJMPz:
+  case I_CJMPnz:
+  case I_CALLC:
+  case I_CALL: {
+    *auxpOf(nextIp) |= AUX_RIFT;
+    break;
+  }
+  }
+  parseAt(nextIp);
+}
+
+const uint8_t *Parser::invokeParser(const uint8_t *ip, const uint8_t **label) {
 #undef PARSER_ON_LABEL
-#define PARSER_ON_LABEL(offset) aux[offset] |= AUX_RIFT;
+#define PARSER_ON_LABEL(l) *label = file.getAddressFor(l);
 
   PARSE_INST;
 
 #undef PARSER_ON_LABEL
-#define PARSER_ON_LABEL ;
-
+#define PARSER_ON_LABEL(l) ;
   return ip;
 }
 
-static void parse() {
-  instructionNum = 0;
-  aux = std::unique_ptr<uint8_t[]>(new uint8_t[file.getCodeSizeBytes()]);
-  memset(aux.get(), 0, file.getCodeSizeBytes());
-  aux[0] |= AUX_RIFT;
-
-  const uint8_t *ip = codeBegin;
-  while (ip < codeEnd) {
-    ++instructionNum;
-    uint8_t *auxp = getAuxP(ip);
-    if (*ip == I_BEGIN || *ip == I_BEGINcl)
-      *auxp |= AUX_RIFT;
-    const uint8_t *iend = prepareAuxStep(ip);
-    int32_t length = iend - ip;
-    if (length > 1) {
-      assert(length >= 1 + sizeof(int32_t));
-      *auxp |= AUX_LONG;
-      memcpy(auxp + 1, &length, sizeof(int32_t));
-    }
-    ip = iend;
-  }
-}
-
 void lama::analyze(ByteFile &&byteFile) {
-  reset();
   setFile(std::move(byteFile));
   if (file.getCodeSizeBytes() == 0) {
     runtimeError("empty bytefile");
   }
-  parse();
+  Parser::parse();
   {
     IdiomAnalyzer<1> analyzer;
     analyzer.analyze();

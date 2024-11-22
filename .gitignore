@@ -6,5 +6,5 @@ idioman
 compile_flags.txt
 env.sh
 .cache
-*.log
+*log*
 *.bc
